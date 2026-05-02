@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speech to Code</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2/tsparticles.bundle.min.js"></script>
+
+<style>
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: #020617;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+/* Background */
+#particles-js {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+/* Main Container */
+.container {
+    position: relative;
+    z-index: 2;
+    width: 90%;
+    max-width: 700px;
+    height: 80vh;
+
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(15px);
+
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+}
+
+/* Header */
+.header {
+    padding: 15px;
+    text-align: center;
+    color: white;
+    font-size: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Chat */
+.chat-box {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.message {
+    max-width: 70%;
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 12px;
+}
+
+.user {
+    background: #3B82F6;
+    color: white;
+    margin-left: auto;
+}
+
+.bot {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+pre {
+    margin: 0;
+}
+
+/* Input */
+.input-area {
+    display: flex;
+    padding: 15px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+input {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    margin-right: 10px;
+}
+
+button {
+    padding: 10px 15px;
+    border-radius: 10px;
+    border: none;
+    background: #10B981;
+    color: white;
+    cursor: pointer;
+}
+#micBtn.active {
+    background: linear-gradient(135deg, #facc15, #f59e0b);
+    box-shadow: 0 0 10px #facc15, 0 0 25px #f59e0b;
+    color: black;
+}
+.copy-btn {
+    float: right;
+    background: #10B981;
+    border: none;
+    color: white;
+    padding: 5px 10px;
+    margin-bottom: 5px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.copy-btn:hover {
+    background: #059669;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="particles-js"></div>
+
+<div class="container">
+
+    <div class="header">🤖 Speech to Code</div>
+
+    <div id="chatBox" class="chat-box"></div>
+
+    <div class="input-area">
+       <button id="micBtn" onclick="toggleListening()">🎤</button>
+        <input id="textInput" placeholder="Type or speak..." />
+        <button onclick="sendText()">Send</button>
+    </div>
+
+</div>
+
+<script>
+const chatBox = document.getElementById("chatBox");
+
+function addMessage(text, type="user") {
+    const msg = document.createElement("div");
+    msg.className = "message " + type;
+    msg.innerText = text;
+    chatBox.appendChild(msg);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function addCode(code) {
+    const msg = document.createElement("div");
+    msg.className = "message bot";
+
+    const pre = document.createElement("pre");
+    pre.innerText = code;
+
+    // 📋 Copy button
+    const btn = document.createElement("button");
+    btn.innerText = "Copy";
+    btn.className = "copy-btn";
+
+    btn.onclick = function () {
+        navigator.clipboard.writeText(code);
+
+        btn.innerText = "Copied!";
+        setTimeout(() => {
+            btn.innerText = "Copy";
+        }, 1500);
+    };
+
+    msg.appendChild(btn);
+    msg.appendChild(pre);
+    chatBox.appendChild(msg);
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function sendText() {
+    const input = document.getElementById("textInput");
+    const text = input.value;
+    if (!text) return;
+
+    addMessage(text);
+    input.value = "";
+
+    fetch("/generate", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text})
+    })
+    .then(res => res.json())
+    .then(data => addCode(data.code));
+}
+
+let isListening = false;
+let recognition;
+
+function toggleListening() {
+    const micBtn = document.getElementById("micBtn");
+
+    if (!isListening) {
+        startListening();
+        micBtn.classList.add("active");
+    } else {
+        stopListening();
+        micBtn.classList.remove("active");
+    }
+}
+
+function startListening() {
+    isListening = true;
+
+    recognition = new webkitSpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = function(e) {
+        const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
+
+        console.log("Heard:", text);
+
+        // 🛑 stop voice command
+        if (text.includes("stop")) {
+            stopListening();
+            return;
+        }
+
+        addMessage(text);
+
+        fetch("/generate", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({text})
+        })
+        .then(res => res.json())
+        .then(data => addCode(data.code));
+    };
+
+    recognition.onend = function() {
+        if (isListening) {
+            recognition.start(); // 🔁 restart automatically
+        }
+    };
+
+    recognition.start();
+}
+
+function stopListening() {
+    isListening = false;
+
+    if (recognition) {
+        recognition.stop();
+    }
+
+    document.getElementById("micBtn").classList.remove("active");
+}
+function speak(text) {
+    const speech = new SpeechSynthesisUtterance(text);
+    speech.rate = 1;
+    speech.pitch = 1;
+    speech.lang = "en-US";
+
+    window.speechSynthesis.speak(speech);
+}
+</script>
+
+<script>
+tsParticles.load("particles-js", {
+  background: { color: { value: "#020617" } },
+  particles: {
+    number: { value: 60 },
+    color: { value: "#3B82F6" },
+    links: {
+      enable: true,
+      distance: 120,
+      color: "#3B82F6",
+      opacity: 0.2,
+      width: 1
+    },
+    move: { enable: true, speed: 1 },
+    size: { value: 2 }
+  },
+  interactivity: {
+    events: { onHover: { enable: true, mode: "grab" } },
+    modes: { grab: { distance: 150 } }
+  }
+});
+</script>
+
+</body>
+</html>
